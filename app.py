@@ -44,7 +44,11 @@ def get_string_interactions(gene_list):
     }
     try:
         response = requests.post(url, data=params)
-        return response.json()
+        data = response.json()
+        # Safety Check: Ensure the response is a list of interactions
+        if isinstance(data, list):
+            return data
+        return []
     except:
         return []
 
@@ -77,9 +81,13 @@ if not df_kegg.empty:
         interactions = get_string_interactions(gene_list)
     
     if uploaded_file:
-        geo_df = pd.read_csv(uploaded_file)
-        df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
-        df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
+        try:
+            geo_df = pd.read_csv(uploaded_file)
+            df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
+            df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
+        except Exception as e:
+            st.error(f"Error reading CSV: {e}")
+            df_kegg['LogFC'] = 0
     else:
         df_kegg['LogFC'] = 0
 
@@ -90,13 +98,16 @@ if not df_kegg.empty:
             G.add_node(row['Symbol'], logfc=row['LogFC'])
 
     edges_found = 0
-    if isinstance(interactions, list):
+    # Safety Check: Only iterate if interactions is a valid list
+    if interactions and isinstance(interactions, list):
         for edge in interactions:
-            if edge['score'] >= (confidence / 1000):
-                n_a, n_b = edge['preferName_A'], edge['preferName_B']
-                if n_a in G.nodes() and n_b in G.nodes():
-                    G.add_edge(n_a, n_b)
-                    edges_found += 1
+            # Check if keys exist to prevent KeyError
+            if 'preferredName_A' in edge and 'preferredName_B' in edge:
+                if edge['score'] >= (confidence / 1000):
+                    n_a, n_b = edge['preferredName_A'], edge['preferredName_B']
+                    if n_a in G.nodes() and n_b in G.nodes():
+                        G.add_edge(n_a, n_b)
+                        edges_found += 1
 
     # --- VISUALIZATION ---
     col1, col2 = st.columns([3, 1])
@@ -120,7 +131,7 @@ if not df_kegg.empty:
         plt.axis('off')
         st.pyplot(fig)
         
-        # --- FIX 1 & 2: DISEASE-SPECIFIC INTERPRETATION ---
+        # --- DYNAMIC INTERPRETATION ---
         if "Diabetes" in disease_choice:
             focus_area = "Insulin signaling and glucose homeostasis"
         else:
@@ -150,4 +161,4 @@ if not df_kegg.empty:
                 st.write(f"• **{hub}**: {deg} interactions")
 
 else:
-    st.error("Data fetch failed. Check connection.")
+    st.error("Data fetch failed. Check connection to KEGG/STRING APIs.")
