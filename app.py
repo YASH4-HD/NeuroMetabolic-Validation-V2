@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v2.3", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v2.4", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -31,34 +31,23 @@ def get_kegg_genes(pathway_id):
                 parts = line.split('; ')
                 id_sym = parts[0].split(None, 1)
                 if len(id_sym) >= 2:
-                    clean_symbol = id_sym[1].split(',')[0].strip()
+                    clean_symbol = id_sym[1].split(',')[0].strip().upper() # Force Upper
                     genes.append({'Symbol': clean_symbol, 'Description': parts[1].strip()})
     return pd.DataFrame(genes)
 
 def get_string_interactions(gene_list):
     url = "https://string-db.org/api/json/network"
-    params = {
-        "identifiers": "%0d".join(gene_list),
-        "species": 9606, 
-        "caller_identity": "research_app"
-    }
+    params = {"identifiers": "%0d".join(gene_list), "species": 9606, "caller_identity": "research_app"}
     try:
         response = requests.post(url, data=params)
         data = response.json()
-        if isinstance(data, list):
-            return data
-        return []
+        return data if isinstance(data, list) else []
     except:
         return []
 
 # --- SIDEBAR ---
 st.sidebar.header("🧬 Study Parameters")
-pathway_map = {
-    "Alzheimer's": "hsa05010",
-    "Huntington's": "hsa05016", 
-    "Parkinson's": "hsa05012",
-    "Type II Diabetes": "hsa04930"
-}
+pathway_map = {"Alzheimer's": "hsa05010", "Huntington's": "hsa05016", "Parkinson's": "hsa05012", "Type II Diabetes": "hsa04930"}
 disease_choice = st.sidebar.selectbox("Target Pathology:", list(pathway_map.keys()))
 pathway_id = pathway_map[disease_choice]
 
@@ -67,9 +56,8 @@ uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
 
 st.sidebar.header("⚙️ Network Rigor")
 confidence = st.sidebar.slider("STRING Interaction Confidence Threshold", 0, 1000, 400)
-node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 2.5)
+node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 3.4)
 
-# UI POLISH FIX: Label Toggle
 st.sidebar.header("🎨 Visualization Polish")
 label_mode = st.sidebar.radio("Show Labels for:", ["All Nodes", "Hubs Only (Degree > 2)", "None"])
 
@@ -82,16 +70,19 @@ if not df_kegg.empty:
     with st.spinner('Calculating Interactome Topology...'):
         interactions = get_string_interactions(gene_list)
     
+    # --- DATA CLEANING & MERGING (THE COLOR FIX) ---
     if uploaded_file:
         try:
             geo_df = pd.read_csv(uploaded_file)
-            # PRO TIP FIX: Force Uppercase and remove spaces for perfect matching
-            geo_df['Symbol'] = geo_df['Symbol'].str.strip().str.upper()
+            # Ensure Symbol is clean and LogFC is numeric
+            geo_df['Symbol'] = geo_df['Symbol'].astype(str).str.strip().str.upper()
+            geo_df['LogFC'] = pd.to_numeric(geo_df['LogFC'], errors='coerce').fillna(0)
             
+            # Merge and prioritize the LogFC from the uploaded file
             df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
             df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
         except Exception as e:
-            st.error(f"Error reading CSV: {e}")
+            st.error(f"CSV Error: {e}")
             df_kegg['LogFC'] = 0
     else:
         df_kegg['LogFC'] = 0
@@ -103,11 +94,11 @@ if not df_kegg.empty:
             G.add_node(row['Symbol'], logfc=row['LogFC'])
 
     edges_found = 0
-    if interactions and isinstance(interactions, list):
+    if interactions:
         for edge in interactions:
             if 'preferredName_A' in edge and 'preferredName_B' in edge:
                 if edge['score'] >= (confidence / 1000):
-                    n_a, n_b = edge['preferredName_A'], edge['preferredName_B']
+                    n_a, n_b = edge['preferredName_A'].upper(), edge['preferredName_B'].upper()
                     if n_a in G.nodes() and n_b in G.nodes():
                         G.add_edge(n_a, n_b)
                         edges_found += 1
@@ -117,60 +108,37 @@ if not df_kegg.empty:
 
     with col1:
         fig, ax = plt.subplots(figsize=(12, 10))
-        pos = nx.spring_layout(G, k=(node_spread + 0.5)/np.sqrt(len(G.nodes())), iterations=50)
+        pos = nx.spring_layout(G, k=(node_spread)/np.sqrt(len(G.nodes())), iterations=50)
         
         node_colors = []
         for node in G.nodes():
-            val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].values
-            val = val[0] if len(val) > 0 else 0
-            if val > 1.0: node_colors.append('#FF4B4B')
-            elif val < -1.0: node_colors.append('#4B4BFF')
-            else: node_colors.append('#D5D8DC')
+            # Get the specific LogFC for this node
+            val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].max() # Use max in case of duplicates
+            if val > 1.0: node_colors.append('#FF4B4B') # RED
+            elif val < -1.0: node_colors.append('#4B4BFF') # BLUE
+            else: node_colors.append('#D5D8DC') # GREY
 
         nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, edgecolors='white')
         
-        # UI POLISH FIX: Conditional Labeling
-        labels = {}
-        for node in G.nodes():
-            if label_mode == "All Nodes":
-                labels[node] = node
-            elif label_mode == "Hubs Only (Degree > 2)":
-                if G.degree(node) > 2:
-                    labels[node] = node
-            else:
-                labels[node] = ""
+        labels = {n: n for n in G.nodes() if (label_mode == "All Nodes" or (label_mode == "Hubs Only (Degree > 2)" and G.degree(n) > 2))}
+        nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_weight='bold')
         
-        nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_weight='bold', 
-                                verticalalignment='bottom', horizontalalignment='center')
         plt.axis('off')
         st.pyplot(fig)
         
-        # --- DYNAMIC INTERPRETATION ---
         focus_area = "Insulin signaling" if "Diabetes" in disease_choice else "Mitochondrial ETC pathways"
-
-        st.markdown(f"""
-        **Analysis Interpretation:** 
-        *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, 
-        suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*
-        
-        **Node Legend:**
-        - 🔴 = **High-centrality hubs** (and upregulated when expression data is available)
-        - 🔵 = **Downregulated** (LogFC < -1.0)
-        - ⚪ = **Background nodes / No expression data**
-        """)
+        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
+        st.markdown("**Node Legend:**\n- 🔴 = **High-centrality hubs** / Upregulated\n- 🔵 = **Downregulated**\n- ⚪ = **Background / No expression data**")
 
     with col2:
         st.subheader("Network Metrics")
         st.metric("Validated Edges", edges_found)
         st.metric("Total Nodes", G.number_of_nodes())
-        
         st.write("---")
         st.write("**Top Centrality Hubs**")
         degrees = dict(G.degree())
         for hub, deg in sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:8]:
-            if deg > 0:
-                st.write(f"• **{hub}**: {deg} interactions")
-
+            if deg > 0: st.write(f"• **{hub}**: {deg} interactions")
 else:
-    st.error("Data fetch failed. Check connection.")
+    st.error("Data fetch failed.")
