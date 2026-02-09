@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v3.2", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v3.3", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -55,8 +55,9 @@ st.sidebar.header("📊 Clinical Validation")
 uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
 
 st.sidebar.header("⚙️ Network Rigor")
-confidence = st.sidebar.slider("STRING Confidence Threshold", 0, 1000, 555) 
-node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 7.0, 5.0)
+# Default confidence at 400 for better initial visibility
+confidence = st.sidebar.slider("STRING Confidence Threshold", 0, 1000, 400) 
+node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 10.0, 5.0)
 
 st.sidebar.header("🎨 Visualization Polish")
 label_mode = st.sidebar.radio("Show Labels for:", ["Hubs Only (Degree > 2)", "All Nodes", "None"])
@@ -81,7 +82,7 @@ if not df_kegg.empty:
     else:
         df_kegg['LogFC'] = 0
 
-    # --- NETWORK ---
+    # --- NETWORK CONSTRUCTION ---
     G = nx.Graph()
     for _, row in df_kegg.iterrows():
         if row['Symbol'] in gene_list:
@@ -101,7 +102,10 @@ if not df_kegg.empty:
 
     with col1:
         fig, ax = plt.subplots(figsize=(12, 10))
-        pos = nx.spring_layout(G, k=(node_spread)/np.sqrt(len(G.nodes())), iterations=50)
+        
+        # STABILITY FIX: If graph is sparse, increase 'k' to prevent collapse
+        k_val = node_spread / np.sqrt(len(G.nodes())) if len(G.nodes()) > 0 else 0.1
+        pos = nx.spring_layout(G, k=k_val, iterations=100, seed=42)
         
         node_colors = []
         for node in G.nodes():
@@ -110,19 +114,20 @@ if not df_kegg.empty:
             elif val < -1.0: node_colors.append('#4B4BFF')
             else: node_colors.append('#D5D8DC')
 
-        nx.draw_networkx_edges(G, pos, alpha=0.2, edge_color='grey')
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1200, edgecolors='white', linewidths=1)
+        nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey', width=1.5)
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1300, edgecolors='white', linewidths=1.5)
         
         labels = {n: n for n in G.nodes() if (label_mode == "All Nodes" or (label_mode == "Hubs Only (Degree > 2)" and G.degree(n) > 2))}
-        nx.draw_networkx_labels(G, pos, labels=labels, font_size=9, font_weight='bold')
+        nx.draw_networkx_labels(G, pos, labels=labels, font_size=10, font_weight='bold')
+        
         plt.axis('off')
         st.pyplot(fig)
         
-        # --- IMPROVED INTERPRETATION LOGIC (Refinement A) ---
+        # --- INTERPRETATION ---
         if "Diabetes" in disease_choice:
             focus_area = "insulin signaling involvement and glucose homeostasis mechanisms"
         elif "Alzheimer" in disease_choice:
-            focus_area = "mitochondrial ETC involvement and cytoskeletal (tau-associated) stability mechanisms"
+            focus_area = "mitochondrial ETC involvement and cytoskeletal stability mechanisms"
         else:
             focus_area = "bioenergetic pathway vulnerability"
 
@@ -139,7 +144,7 @@ if not df_kegg.empty:
         for hub, deg in top_hubs:
             if deg > 0: st.write(f"• **{hub}**: {deg} interactions")
 
-    # --- MANUSCRIPT TOOLS (Refinement B) ---
+    # --- MANUSCRIPT TOOLS ---
     st.write("---")
     st.subheader("📝 Manuscript Drafting Tools")
     
@@ -147,10 +152,7 @@ if not df_kegg.empty:
     
     with m_tab1:
         hub_names = [h[0] for h in top_hubs[:3]]
-        if len(hub_names) >= 3:
-            hub_str = f"{hub_names[0]}, {hub_names[1]}, and {hub_names[2]}"
-        else:
-            hub_str = ", ".join(hub_names)
+        hub_str = " and ".join([", ".join(hub_names[:-1]), hub_names[-1]]) if len(hub_names) > 1 else hub_names[0] if hub_names else "N/A"
             
         cap = (f"**Figure 1. Interactome topology of {disease_choice} disease.** "
                f"A protein–protein interaction network was constructed using STRING-DB (confidence ≥ {confidence/1000}) "
