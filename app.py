@@ -61,11 +61,10 @@ pathway_id = pathway_map[disease_choice]
 
 st.sidebar.header("📊 Phase 4: Clinical Validation")
 uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
-# SUGGESTION 4: Added Expected Columns Hint
-st.sidebar.caption("Expected columns: *Symbol, LogFC, adj.P.Val (optional)*")
+st.sidebar.caption("Expected columns: *Symbol, LogFC*")
 
 st.sidebar.header("⚙️ Network Rigor")
-# SUGGESTION 1: Renamed for statistical rigor
+# FIX 1: Renamed for statistical rigor
 confidence = st.sidebar.slider("STRING Interaction Confidence Threshold", 0, 1000, 400)
 node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 2.5)
 
@@ -73,6 +72,7 @@ node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 2.5)
 df_kegg = get_kegg_genes(pathway_id)
 
 if not df_kegg.empty:
+    # Use top 45 genes for optimal visualization
     gene_list = df_kegg['Symbol'].unique().tolist()[:45]
     
     with st.spinner('Calculating Interactome Topology...'):
@@ -105,7 +105,8 @@ if not df_kegg.empty:
 
     with col1:
         fig, ax = plt.subplots(figsize=(12, 10))
-        pos = nx.spring_layout(G, k=node_spread/np.sqrt(len(G.nodes())), iterations=50)
+        # FIX 2: Added +0.5 to base spread to prevent initial overlap
+        pos = nx.spring_layout(G, k=(node_spread + 0.5)/np.sqrt(len(G.nodes())), iterations=50)
         
         node_colors = []
         for node in G.nodes():
@@ -117,19 +118,23 @@ if not df_kegg.empty:
 
         nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, edgecolors='white')
-        nx.draw_networkx_labels(G, pos, font_size=10, font_weight='bold')
+        
+        # FIX 2: Optimized label positioning
+        nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold', 
+                                verticalalignment='bottom', 
+                                horizontalalignment='center')
         
         plt.axis('off')
         st.pyplot(fig)
         
-        # SUGGESTION 2 & 3: Interpretation and Legend
+        # FIX 1: Interpretation and Legend with "Degree" specification
         st.markdown(f"""
         **Analysis Interpretation:** 
         *Highlighted hubs represent high-connectivity mitochondrial genes emerging under STRING confidence ≥ {confidence/1000}, 
         suggesting ETC-centered vulnerability in {disease_choice}.*
         
         **Node Legend:**
-        - 🔴 = **High Centrality Hubs / Upregulated** (LogFC > 1.0)
+        - 🔴 = **High centrality hubs (degree)** / Upregulated (LogFC > 1.0)
         - 🔵 = **Downregulated** (LogFC < -1.0)
         - ⚪ = **Neutral / No Clinical Data**
         """)
@@ -142,6 +147,7 @@ if not df_kegg.empty:
         st.write("---")
         st.write("**Top Centrality Hubs**")
         degrees = dict(G.degree())
+        # Sort by degree
         for hub, deg in sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:8]:
             if deg > 0:
                 st.write(f"• **{hub}**: {deg} interactions")
