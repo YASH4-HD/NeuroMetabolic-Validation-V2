@@ -128,7 +128,7 @@ if not df_kegg.empty:
         st.pyplot(fig)
         
         focus_area = "Insulin signaling" if "Diabetes" in disease_choice else "Mitochondrial ETC pathways"
-        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
+        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, when expression data is available, nodes are additionally colored by differential regulation, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
         st.markdown("**Node Legend:**\n- 🔴 = **High-centrality hubs** / Upregulated\n- 🔵 = **Downregulated**\n- ⚪ = **Background / No expression data**")
 
     with col2:
