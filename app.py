@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v3.5", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v3.6", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -75,7 +75,6 @@ if not df_kegg.empty:
     if uploaded_file:
         try:
             geo_df = pd.read_csv(uploaded_file)
-            # Smart detection of columns
             sym_col = [c for c in geo_df.columns if 'sym' in c.lower() or 'gene' in c.lower()][0]
             fc_col = [c for c in geo_df.columns if 'fc' in c.lower() or 'log' in c.lower()][0]
             
@@ -91,7 +90,7 @@ if not df_kegg.empty:
     else:
         df_kegg['LogFC'] = 0
 
-    # --- NETWORK ---
+    # --- NETWORK CONSTRUCTION ---
     G = nx.Graph()
     for _, row in df_kegg.iterrows():
         if row['Symbol'] in gene_list:
@@ -106,29 +105,36 @@ if not df_kegg.empty:
                     G.add_edge(n_a, n_b)
                     edges_found += 1
 
+    # --- NEW: ORPHAN FILTER ---
+    # This removes the grey dots in the corner that have no connections
+    isolated_nodes = list(nx.isolates(G))
+    G.remove_nodes_from(isolated_nodes)
+
     # --- MAIN VIEW ---
     col1, col2 = st.columns([3, 1])
 
     with col1:
-        fig, ax = plt.subplots(figsize=(12, 10))
-        # Stability fix for layout
-        k_val = node_spread / np.sqrt(len(G.nodes())) if len(G.nodes()) > 0 else 0.1
-        pos = nx.spring_layout(G, k=k_val, iterations=100, seed=42)
-        
-        node_colors = []
-        for node in G.nodes():
-            val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].max()
-            if val > 0.5: node_colors.append('#FF4B4B')
-            elif val < -0.5: node_colors.append('#4B4BFF')
-            else: node_colors.append('#D5D8DC')
+        if G.number_of_nodes() > 0:
+            fig, ax = plt.subplots(figsize=(12, 10))
+            k_val = node_spread / np.sqrt(len(G.nodes()))
+            pos = nx.spring_layout(G, k=k_val, iterations=100, seed=42)
+            
+            node_colors = []
+            for node in G.nodes():
+                val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].max()
+                if val > 0.5: node_colors.append('#FF4B4B')
+                elif val < -0.5: node_colors.append('#4B4BFF')
+                else: node_colors.append('#D5D8DC')
 
-        nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1300, edgecolors='white', linewidths=1.5)
-        
-        labels = {n: n for n in G.nodes() if (label_mode == "All Nodes" or (label_mode == "Hubs Only (Degree > 2)" and G.degree(n) > 2))}
-        nx.draw_networkx_labels(G, pos, labels=labels, font_size=10, font_weight='bold')
-        plt.axis('off')
-        st.pyplot(fig)
+            nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
+            nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1300, edgecolors='white', linewidths=1.5)
+            
+            labels = {n: n for n in G.nodes() if (label_mode == "All Nodes" or (label_mode == "Hubs Only (Degree > 2)" and G.degree(n) > 2))}
+            nx.draw_networkx_labels(G, pos, labels=labels, font_size=10, font_weight='bold')
+            plt.axis('off')
+            st.pyplot(fig)
+        else:
+            st.warning("No interactions found at this confidence level. Try lowering the threshold.")
         
         if "Diabetes" in disease_choice:
             focus_area = "insulin signaling involvement and glucose homeostasis mechanisms"
@@ -142,7 +148,8 @@ if not df_kegg.empty:
     with col2:
         st.subheader("Network Metrics")
         st.metric("Validated Edges", edges_found)
-        st.metric("Total Nodes", G.number_of_nodes())
+        st.metric("Total Nodes (Connected)", G.number_of_nodes())
+        st.write(f"*(Removed {len(isolated_nodes)} unconnected nodes)*")
         st.write("---")
         st.write("**Top Centrality Hubs**")
         degrees = dict(G.degree())
