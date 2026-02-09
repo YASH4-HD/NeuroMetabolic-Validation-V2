@@ -108,7 +108,7 @@ if not df_kegg.empty:
         
         fig, ax = plt.subplots(figsize=(12, 10))
         # Use spring_layout to show clusters
-        pos = nx.spring_layout(G, k=0.4, iterations=50)
+        pos = nx.spring_layout(G, k=0.8, iterations=100)
         
         # Color nodes by LogFC
         node_colors = []
