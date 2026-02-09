@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v2.2", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v2.3", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -45,7 +45,6 @@ def get_string_interactions(gene_list):
     try:
         response = requests.post(url, data=params)
         data = response.json()
-        # Safety Check: Ensure the response is a list of interactions
         if isinstance(data, list):
             return data
         return []
@@ -65,11 +64,14 @@ pathway_id = pathway_map[disease_choice]
 
 st.sidebar.header("📊 Phase 4: Clinical Validation")
 uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
-st.sidebar.caption("Expected columns: *Symbol, LogFC*")
 
 st.sidebar.header("⚙️ Network Rigor")
 confidence = st.sidebar.slider("STRING Interaction Confidence Threshold", 0, 1000, 400)
 node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 2.5)
+
+# UI POLISH FIX: Label Toggle
+st.sidebar.header("🎨 Visualization Polish")
+label_mode = st.sidebar.radio("Show Labels for:", ["All Nodes", "Hubs Only (Degree > 2)", "None"])
 
 # --- DATA PROCESSING ---
 df_kegg = get_kegg_genes(pathway_id)
@@ -83,6 +85,9 @@ if not df_kegg.empty:
     if uploaded_file:
         try:
             geo_df = pd.read_csv(uploaded_file)
+            # PRO TIP FIX: Force Uppercase and remove spaces for perfect matching
+            geo_df['Symbol'] = geo_df['Symbol'].str.strip().str.upper()
+            
             df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
             df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
         except Exception as e:
@@ -98,10 +103,8 @@ if not df_kegg.empty:
             G.add_node(row['Symbol'], logfc=row['LogFC'])
 
     edges_found = 0
-    # Safety Check: Only iterate if interactions is a valid list
     if interactions and isinstance(interactions, list):
         for edge in interactions:
-            # Check if keys exist to prevent KeyError
             if 'preferredName_A' in edge and 'preferredName_B' in edge:
                 if edge['score'] >= (confidence / 1000):
                     n_a, n_b = edge['preferredName_A'], edge['preferredName_B']
@@ -126,16 +129,25 @@ if not df_kegg.empty:
 
         nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, edgecolors='white')
-        nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold', 
+        
+        # UI POLISH FIX: Conditional Labeling
+        labels = {}
+        for node in G.nodes():
+            if label_mode == "All Nodes":
+                labels[node] = node
+            elif label_mode == "Hubs Only (Degree > 2)":
+                if G.degree(node) > 2:
+                    labels[node] = node
+            else:
+                labels[node] = ""
+        
+        nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_weight='bold', 
                                 verticalalignment='bottom', horizontalalignment='center')
         plt.axis('off')
         st.pyplot(fig)
         
         # --- DYNAMIC INTERPRETATION ---
-        if "Diabetes" in disease_choice:
-            focus_area = "Insulin signaling and glucose homeostasis"
-        else:
-            focus_area = "Mitochondrial ETC and bioenergetic pathways"
+        focus_area = "Insulin signaling" if "Diabetes" in disease_choice else "Mitochondrial ETC pathways"
 
         st.markdown(f"""
         **Analysis Interpretation:** 
@@ -161,4 +173,4 @@ if not df_kegg.empty:
                 st.write(f"• **{hub}**: {deg} interactions")
 
 else:
-    st.error("Data fetch failed. Check connection to KEGG/STRING APIs.")
+    st.error("Data fetch failed. Check connection.")
