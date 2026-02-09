@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v2.4", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v2.5", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -31,7 +31,7 @@ def get_kegg_genes(pathway_id):
                 parts = line.split('; ')
                 id_sym = parts[0].split(None, 1)
                 if len(id_sym) >= 2:
-                    clean_symbol = id_sym[1].split(',')[0].strip().upper() # Force Upper
+                    clean_symbol = id_sym[1].split(',')[0].strip().upper()
                     genes.append({'Symbol': clean_symbol, 'Description': parts[1].strip()})
     return pd.DataFrame(genes)
 
@@ -59,7 +59,11 @@ confidence = st.sidebar.slider("STRING Interaction Confidence Threshold", 0, 100
 node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 3.4)
 
 st.sidebar.header("🎨 Visualization Polish")
-label_mode = st.sidebar.radio("Show Labels for:", ["All Nodes", "Hubs Only (Degree > 2)", "None"])
+# REFINEMENT C: Defaulting to "Hubs Only" for better UX/readability
+label_mode = st.sidebar.radio("Show Labels for:", ["Hubs Only (Degree > 2)", "All Nodes", "None"], index=0)
+
+# REFINEMENT B: Global Disclaimer Line
+st.sidebar.info("💡 *Network topology reflects functional coupling and pathway co-occurrence, not direct molecular causality.*")
 
 # --- DATA PROCESSING ---
 df_kegg = get_kegg_genes(pathway_id)
@@ -70,15 +74,11 @@ if not df_kegg.empty:
     with st.spinner('Calculating Interactome Topology...'):
         interactions = get_string_interactions(gene_list)
     
-    # --- DATA CLEANING & MERGING (THE COLOR FIX) ---
     if uploaded_file:
         try:
             geo_df = pd.read_csv(uploaded_file)
-            # Ensure Symbol is clean and LogFC is numeric
             geo_df['Symbol'] = geo_df['Symbol'].astype(str).str.strip().str.upper()
             geo_df['LogFC'] = pd.to_numeric(geo_df['LogFC'], errors='coerce').fillna(0)
-            
-            # Merge and prioritize the LogFC from the uploaded file
             df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
             df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
         except Exception as e:
@@ -112,15 +112,15 @@ if not df_kegg.empty:
         
         node_colors = []
         for node in G.nodes():
-            # Get the specific LogFC for this node
-            val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].max() # Use max in case of duplicates
-            if val > 1.0: node_colors.append('#FF4B4B') # RED
-            elif val < -1.0: node_colors.append('#4B4BFF') # BLUE
-            else: node_colors.append('#D5D8DC') # GREY
+            val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].max()
+            if val > 1.0: node_colors.append('#FF4B4B')
+            elif val < -1.0: node_colors.append('#4B4BFF')
+            else: node_colors.append('#D5D8DC')
 
         nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, edgecolors='white')
         
+        # UX Logic for Labels
         labels = {n: n for n in G.nodes() if (label_mode == "All Nodes" or (label_mode == "Hubs Only (Degree > 2)" and G.degree(n) > 2))}
         nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_weight='bold')
         
@@ -128,8 +128,15 @@ if not df_kegg.empty:
         st.pyplot(fig)
         
         focus_area = "Insulin signaling" if "Diabetes" in disease_choice else "Mitochondrial ETC pathways"
-        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, when expression data is available, nodes are additionally colored by differential regulation, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
-        st.markdown("**Node Legend:**\n- 🔴 = **High-centrality hubs** / Upregulated\n- 🔵 = **Downregulated**\n- ⚪ = **Background / No expression data**")
+        
+        # REFINEMENT A: Updated Interpretation and Legend Wording
+        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
+        st.markdown(f"""
+        **Node Legend:**
+        - 🔴 = **High-centrality hubs** (upregulated when expression data is available)
+        - 🔵 = **Downregulated** (LogFC < -1.0)
+        - ⚪ = **Background / No expression data**
+        """)
 
     with col2:
         st.subheader("Network Metrics")
