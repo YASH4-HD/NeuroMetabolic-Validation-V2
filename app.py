@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v3.1", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v3.2", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -55,7 +55,7 @@ st.sidebar.header("📊 Clinical Validation")
 uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
 
 st.sidebar.header("⚙️ Network Rigor")
-confidence = st.sidebar.slider("STRING Confidence Threshold", 0, 1000, 242) # Set to your screenshot value
+confidence = st.sidebar.slider("STRING Confidence Threshold", 0, 1000, 555) 
 node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 7.0, 5.0)
 
 st.sidebar.header("🎨 Visualization Polish")
@@ -67,7 +67,6 @@ st.sidebar.info("💡 *Network topology reflects functional coupling and pathway
 df_kegg = get_kegg_genes(pathway_id)
 
 if not df_kegg.empty:
-    # Get top 50 genes for better visual density
     gene_list = df_kegg['Symbol'].unique().tolist()[:50]
     
     with st.spinner('Calculating Interactome...'):
@@ -119,15 +118,15 @@ if not df_kegg.empty:
         plt.axis('off')
         st.pyplot(fig)
         
-        # --- IMPROVED INTERPRETATION LOGIC ---
+        # --- IMPROVED INTERPRETATION LOGIC (Refinement A) ---
         if "Diabetes" in disease_choice:
-            focus_area = "Insulin signaling and glucose homeostasis"
+            focus_area = "insulin signaling involvement and glucose homeostasis mechanisms"
         elif "Alzheimer" in disease_choice:
-            focus_area = "Mitochondrial ETC and Cytoskeletal (Tau-related) stability"
+            focus_area = "mitochondrial ETC involvement and cytoskeletal (tau-associated) stability mechanisms"
         else:
-            focus_area = "Bioenergetic pathway vulnerability"
+            focus_area = "bioenergetic pathway vulnerability"
 
-        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}; when expression data is available, nodes are additionally colored by differential regulation, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
+        st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}; when expression data is available, nodes are additionally colored by differential regulation, suggesting **{focus_area}** as key drivers of pathology in {disease_choice}.*")
 
     with col2:
         st.subheader("Network Metrics")
@@ -140,19 +139,31 @@ if not df_kegg.empty:
         for hub, deg in top_hubs:
             if deg > 0: st.write(f"• **{hub}**: {deg} interactions")
 
-    # --- NEW MANUSCRIPT TOOLS (NOW CLEARLY VISIBLE) ---
+    # --- MANUSCRIPT TOOLS (Refinement B) ---
     st.write("---")
     st.subheader("📝 Manuscript Drafting Tools")
     
     m_tab1, m_tab2 = st.tabs(["Figure Caption", "Methods Section"])
     
     with m_tab1:
-        hub_str = ", ".join([h[0] for h in top_hubs[:3]])
-        cap = f"**Figure 1. Interactome Topology of {disease_choice}.** PPI network constructed via STRING-DB (confidence ≥ {confidence/1000}). Nodes represent genes within the {pathway_id} pathway. Color indicates differential regulation (Red: Upregulated; Blue: Downregulated). Topological analysis identifies {hub_str} as key regulatory hubs."
-        st.text_area("Copy this for your paper:", cap, height=100)
+        hub_names = [h[0] for h in top_hubs[:3]]
+        if len(hub_names) >= 3:
+            hub_str = f"{hub_names[0]}, {hub_names[1]}, and {hub_names[2]}"
+        else:
+            hub_str = ", ".join(hub_names)
+            
+        cap = (f"**Figure 1. Interactome topology of {disease_choice} disease.** "
+               f"A protein–protein interaction network was constructed using STRING-DB (confidence ≥ {confidence/1000}) "
+               f"for genes within the KEGG {disease_choice} pathway ({pathway_id}). Nodes represent genes; edges indicate "
+               f"functional interactions. Node color reflects differential regulation where expression data are available "
+               f"(red, upregulated; blue, downregulated). Network topology highlights **{hub_str}** as high-centrality hubs.")
+        st.text_area("Suggested final caption (drop-in replacement):", cap, height=130)
 
     with m_tab2:
-        meth = f"Systems biology analysis was performed using the NeuroMetabolic Pipeline. Pathway genes were retrieved from KEGG ({pathway_id}). Protein-protein interactions were mapped using STRING-DB API with a confidence score of {confidence/1000}. Network visualization and degree centrality were calculated using NetworkX. Clinical patient data was overlaid to identify functional dysregulation within topological hubs."
+        meth = (f"Systems biology analysis was performed using a custom pipeline. Pathway genes were retrieved from KEGG ({pathway_id}). "
+                f"Protein-protein interactions were mapped using the STRING-DB API with a minimum interaction score of {confidence/1000}. "
+                f"Network visualization and degree centrality were calculated using NetworkX. Clinical patient data was overlaid to "
+                f"identify functional dysregulation within topological hubs.")
         st.text_area("Methods Text:", meth, height=120)
 
 else:
