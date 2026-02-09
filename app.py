@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v2.1", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v2.2", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -64,7 +64,6 @@ uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
 st.sidebar.caption("Expected columns: *Symbol, LogFC*")
 
 st.sidebar.header("⚙️ Network Rigor")
-# FIX 1: Renamed for statistical rigor
 confidence = st.sidebar.slider("STRING Interaction Confidence Threshold", 0, 1000, 400)
 node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 2.5)
 
@@ -72,7 +71,6 @@ node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 2.5)
 df_kegg = get_kegg_genes(pathway_id)
 
 if not df_kegg.empty:
-    # Use top 45 genes for optimal visualization
     gene_list = df_kegg['Symbol'].unique().tolist()[:45]
     
     with st.spinner('Calculating Interactome Topology...'):
@@ -105,33 +103,33 @@ if not df_kegg.empty:
 
     with col1:
         fig, ax = plt.subplots(figsize=(12, 10))
-        # FIX 2: Added +0.5 to base spread to prevent initial overlap
         pos = nx.spring_layout(G, k=(node_spread + 0.5)/np.sqrt(len(G.nodes())), iterations=50)
         
         node_colors = []
         for node in G.nodes():
             val = df_kegg.loc[df_kegg['Symbol'] == node, 'LogFC'].values
             val = val[0] if len(val) > 0 else 0
-            if val > 1.0: node_colors.append('#FF4B4B') # Red
-            elif val < -1.0: node_colors.append('#4B4BFF') # Blue
-            else: node_colors.append('#D5D8DC') # Grey
+            if val > 1.0: node_colors.append('#FF4B4B')
+            elif val < -1.0: node_colors.append('#4B4BFF')
+            else: node_colors.append('#D5D8DC')
 
         nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
         nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, edgecolors='white')
-        
-        # FIX 2: Optimized label positioning
         nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold', 
-                                verticalalignment='bottom', 
-                                horizontalalignment='center')
-        
+                                verticalalignment='bottom', horizontalalignment='center')
         plt.axis('off')
         st.pyplot(fig)
         
-        # FIX 1: Interpretation and Legend with "Degree" specification
+        # --- FIX 1 & 2: DISEASE-SPECIFIC INTERPRETATION ---
+        if "Diabetes" in disease_choice:
+            focus_area = "Insulin signaling and glucose homeostasis"
+        else:
+            focus_area = "Mitochondrial ETC and bioenergetic pathways"
+
         st.markdown(f"""
         **Analysis Interpretation:** 
-        *Highlighted hubs represent high-connectivity mitochondrial genes emerging under STRING confidence ≥ {confidence/1000}, 
-        suggesting ETC-centered vulnerability in {disease_choice}.*
+        *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}, 
+        suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*
         
         **Node Legend:**
         - 🔴 = **High centrality hubs (degree)** / Upregulated (LogFC > 1.0)
@@ -147,10 +145,9 @@ if not df_kegg.empty:
         st.write("---")
         st.write("**Top Centrality Hubs**")
         degrees = dict(G.degree())
-        # Sort by degree
         for hub, deg in sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:8]:
             if deg > 0:
                 st.write(f"• **{hub}**: {deg} interactions")
 
 else:
-    st.error("Data fetch failed. Check connection to KEGG/STRING APIs.")
+    st.error("Data fetch failed. Check connection.")
