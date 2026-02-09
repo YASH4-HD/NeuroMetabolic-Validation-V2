@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="NeuroMetabolic Validation v2.5", page_icon="🔬", layout="wide")
+st.set_page_config(page_title="NeuroMetabolic Validation v3.1", page_icon="🔬", layout="wide")
 
 st.title("🔬 Clinical Validation & PPI Interactome")
 st.markdown("### Systems Biology Pipeline: Phase 3 (Interactome) & Phase 4 (Clinical Overlay)")
@@ -37,7 +37,7 @@ def get_kegg_genes(pathway_id):
 
 def get_string_interactions(gene_list):
     url = "https://string-db.org/api/json/network"
-    params = {"identifiers": "%0d".join(gene_list), "species": 9606, "caller_identity": "research_app"}
+    params = {"identifiers": "%0d".join(gene_list), "species": 9606, "caller_identity": "manuscript_v3"}
     try:
         response = requests.post(url, data=params)
         data = response.json()
@@ -51,43 +51,38 @@ pathway_map = {"Alzheimer's": "hsa05010", "Huntington's": "hsa05016", "Parkinson
 disease_choice = st.sidebar.selectbox("Target Pathology:", list(pathway_map.keys()))
 pathway_id = pathway_map[disease_choice]
 
-st.sidebar.header("📊 Phase 4: Clinical Validation")
+st.sidebar.header("📊 Clinical Validation")
 uploaded_file = st.sidebar.file_uploader("Upload Patient Data (GEO CSV)")
 
 st.sidebar.header("⚙️ Network Rigor")
-confidence = st.sidebar.slider("STRING Interaction Confidence Threshold", 0, 1000, 400)
-node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 5.0, 3.4)
+confidence = st.sidebar.slider("STRING Confidence Threshold", 0, 1000, 242) # Set to your screenshot value
+node_spread = st.sidebar.slider("Node Spacing (Layout Force)", 1.0, 7.0, 5.0)
 
 st.sidebar.header("🎨 Visualization Polish")
-# REFINEMENT C: Defaulting to "Hubs Only" for better UX/readability
-label_mode = st.sidebar.radio("Show Labels for:", ["Hubs Only (Degree > 2)", "All Nodes", "None"], index=0)
+label_mode = st.sidebar.radio("Show Labels for:", ["Hubs Only (Degree > 2)", "All Nodes", "None"])
 
-# REFINEMENT B: Global Disclaimer Line
 st.sidebar.info("💡 *Network topology reflects functional coupling and pathway co-occurrence, not direct molecular causality.*")
 
 # --- DATA PROCESSING ---
 df_kegg = get_kegg_genes(pathway_id)
 
 if not df_kegg.empty:
-    gene_list = df_kegg['Symbol'].unique().tolist()[:45]
+    # Get top 50 genes for better visual density
+    gene_list = df_kegg['Symbol'].unique().tolist()[:50]
     
-    with st.spinner('Calculating Interactome Topology...'):
+    with st.spinner('Calculating Interactome...'):
         interactions = get_string_interactions(gene_list)
     
     if uploaded_file:
-        try:
-            geo_df = pd.read_csv(uploaded_file)
-            geo_df['Symbol'] = geo_df['Symbol'].astype(str).str.strip().str.upper()
-            geo_df['LogFC'] = pd.to_numeric(geo_df['LogFC'], errors='coerce').fillna(0)
-            df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
-            df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
-        except Exception as e:
-            st.error(f"CSV Error: {e}")
-            df_kegg['LogFC'] = 0
+        geo_df = pd.read_csv(uploaded_file)
+        geo_df['Symbol'] = geo_df['Symbol'].astype(str).str.strip().str.upper()
+        geo_df['LogFC'] = pd.to_numeric(geo_df['LogFC'], errors='coerce').fillna(0)
+        df_kegg = pd.merge(df_kegg, geo_df[['Symbol', 'LogFC']], on='Symbol', how='left')
+        df_kegg['LogFC'] = df_kegg['LogFC'].fillna(0)
     else:
         df_kegg['LogFC'] = 0
 
-    # --- NETWORK CONSTRUCTION ---
+    # --- NETWORK ---
     G = nx.Graph()
     for _, row in df_kegg.iterrows():
         if row['Symbol'] in gene_list:
@@ -96,14 +91,13 @@ if not df_kegg.empty:
     edges_found = 0
     if interactions:
         for edge in interactions:
-            if 'preferredName_A' in edge and 'preferredName_B' in edge:
-                if edge['score'] >= (confidence / 1000):
-                    n_a, n_b = edge['preferredName_A'].upper(), edge['preferredName_B'].upper()
-                    if n_a in G.nodes() and n_b in G.nodes():
-                        G.add_edge(n_a, n_b)
-                        edges_found += 1
+            if edge['score'] >= (confidence / 1000):
+                n_a, n_b = edge['preferredName_A'].upper(), edge['preferredName_B'].upper()
+                if n_a in G.nodes() and n_b in G.nodes():
+                    G.add_edge(n_a, n_b)
+                    edges_found += 1
 
-    # --- VISUALIZATION ---
+    # --- MAIN VIEW ---
     col1, col2 = st.columns([3, 1])
 
     with col1:
@@ -117,26 +111,23 @@ if not df_kegg.empty:
             elif val < -1.0: node_colors.append('#4B4BFF')
             else: node_colors.append('#D5D8DC')
 
-        nx.draw_networkx_edges(G, pos, alpha=0.3, edge_color='grey')
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1000, edgecolors='white')
+        nx.draw_networkx_edges(G, pos, alpha=0.2, edge_color='grey')
+        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=1200, edgecolors='white', linewidths=1)
         
-        # UX Logic for Labels
         labels = {n: n for n in G.nodes() if (label_mode == "All Nodes" or (label_mode == "Hubs Only (Degree > 2)" and G.degree(n) > 2))}
-        nx.draw_networkx_labels(G, pos, labels=labels, font_size=8, font_weight='bold')
-        
+        nx.draw_networkx_labels(G, pos, labels=labels, font_size=9, font_weight='bold')
         plt.axis('off')
         st.pyplot(fig)
         
-        focus_area = "Insulin signaling" if "Diabetes" in disease_choice else "Mitochondrial ETC pathways"
-        
-        # REFINEMENT A: Updated Interpretation and Legend Wording
+        # --- IMPROVED INTERPRETATION LOGIC ---
+        if "Diabetes" in disease_choice:
+            focus_area = "Insulin signaling and glucose homeostasis"
+        elif "Alzheimer" in disease_choice:
+            focus_area = "Mitochondrial ETC and Cytoskeletal (Tau-related) stability"
+        else:
+            focus_area = "Bioenergetic pathway vulnerability"
+
         st.markdown(f"**Analysis Interpretation:** *Highlighted hubs represent high-connectivity genes emerging under STRING confidence ≥ {confidence/1000}; when expression data is available, nodes are additionally colored by differential regulation, suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*")
-        st.markdown(f"""
-        **Node Legend:**
-        - 🔴 = **High-centrality hubs** node color indicates regulation when expression data is available
-        - 🔵 = **Downregulated** (LogFC < -1.0)
-        - ⚪ = **Background / No expression data**
-        """)
 
     with col2:
         st.subheader("Network Metrics")
@@ -145,7 +136,24 @@ if not df_kegg.empty:
         st.write("---")
         st.write("**Top Centrality Hubs**")
         degrees = dict(G.degree())
-        for hub, deg in sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:8]:
+        top_hubs = sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:6]
+        for hub, deg in top_hubs:
             if deg > 0: st.write(f"• **{hub}**: {deg} interactions")
+
+    # --- NEW MANUSCRIPT TOOLS (NOW CLEARLY VISIBLE) ---
+    st.write("---")
+    st.subheader("📝 Manuscript Drafting Tools")
+    
+    m_tab1, m_tab2 = st.tabs(["Figure Caption", "Methods Section"])
+    
+    with m_tab1:
+        hub_str = ", ".join([h[0] for h in top_hubs[:3]])
+        cap = f"**Figure 1. Interactome Topology of {disease_choice}.** PPI network constructed via STRING-DB (confidence ≥ {confidence/1000}). Nodes represent genes within the {pathway_id} pathway. Color indicates differential regulation (Red: Upregulated; Blue: Downregulated). Topological analysis identifies {hub_str} as key regulatory hubs."
+        st.text_area("Copy this for your paper:", cap, height=100)
+
+    with m_tab2:
+        meth = f"Systems biology analysis was performed using the NeuroMetabolic Pipeline. Pathway genes were retrieved from KEGG ({pathway_id}). Protein-protein interactions were mapped using STRING-DB API with a confidence score of {confidence/1000}. Network visualization and degree centrality were calculated using NetworkX. Clinical patient data was overlaid to identify functional dysregulation within topological hubs."
+        st.text_area("Methods Text:", meth, height=120)
+
 else:
-    st.error("Data fetch failed.")
+    st.error("Data fetch failed. Please check your internet connection.")
