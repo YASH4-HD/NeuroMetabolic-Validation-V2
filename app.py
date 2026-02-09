@@ -93,7 +93,7 @@ if not df_kegg.empty:
     if isinstance(interactions, list):
         for edge in interactions:
             if edge['score'] >= (confidence / 1000):
-                n_a, n_b = edge['preferredName_A'], edge['preferredName_B']
+                n_a, n_b = edge['preferName_A'], edge['preferName_B']
                 if n_a in G.nodes() and n_b in G.nodes():
                     G.add_edge(n_a, n_b)
                     edges_found += 1
@@ -132,9 +132,9 @@ if not df_kegg.empty:
         suggesting **{focus_area}** as a key driver of pathology in {disease_choice}.*
         
         **Node Legend:**
-        - 🔴 = **High centrality hubs (degree)** / Upregulated (LogFC > 1.0)
+        - 🔴 = **High-centrality hubs** (and upregulated when expression data is available)
         - 🔵 = **Downregulated** (LogFC < -1.0)
-        - ⚪ = **Neutral / No Clinical Data**
+        - ⚪ = **Background nodes / No expression data**
         """)
 
     with col2:
